@@ -1,0 +1,18 @@
+{
+  "manifest_version": 3,
+  "name": "LinkedIn Zip Solver",
+  "version": "1.0",
+  "description": "Automatically detects and solves Zip/Number Net puzzles on LinkedIn pages by clicking the extension icon.",
+  "permissions": [
+    "scripting"
+  ],
+  "host_permissions": [
+    "https://*.linkedin.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "Solve Zip Puzzle on Page"
+  }
+}
