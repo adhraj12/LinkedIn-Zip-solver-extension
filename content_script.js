@@ -4,11 +4,13 @@
     console.log("Zip Puzzle Solver Extension: Script injected.");
 
     // ======================== SELECTOR CONFIGURATION ========================
-    const GRID_CONTAINER_SELECTOR = '.trail-grid';
-    const CELL_SELECTOR = '.trail-cell';
-    const CELL_CONTENT_SELECTOR = '.trail-cell-content';
-    const WALL_DOWN_SELECTOR = '.trail-cell-wall--down';
-    const WALL_RIGHT_SELECTOR = '.trail-cell-wall--right';
+    const GRID_CONTAINER_SELECTOR = '[data-testid="interactive-grid"]';
+    const CELL_SELECTOR = '[data-cell-idx]';
+    const CELL_CONTENT_SELECTOR = '[data-cell-content="true"]';
+    // Educated guess: LinkedIn may have moved from classes to more stable data-testid attributes for walls.
+    const WALL_DOWN_SELECTOR = '[data-testid="wall-down"]';
+    const WALL_RIGHT_SELECTOR = '[data-testid="wall-right"]';
+
 
     /**
      * Shows a feedback message on the screen.
@@ -57,7 +59,8 @@
         }
 
         const style = gridElement.getAttribute('style');
-        const sizeMatch = style?.match(/--rows:\s*(\d+)/);
+        // Use a more generic regex to handle obfuscated CSS variable names
+        const sizeMatch = style?.match(/--\w+:\s*(\d+)/);
         if (!sizeMatch?.[1]) {
             showFeedback('❌ Could not determine grid size from style attribute.', true);
             return null;
