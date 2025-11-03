@@ -9,7 +9,7 @@
     const CELL_CONTENT_SELECTOR = '[data-cell-content="true"]';
     // LinkedIn has moved from classes to more stable data-testid attributes for walls.
     // TODO: The class for horizontal walls needs to be identified and updated.
-    const WALL_DOWN_SELECTOR = '[data-testid="wall-down-placeholder"]'; 
+    const WALL_DOWN_SELECTOR = '._914a2ded'; 
     const WALL_RIGHT_SELECTOR = '.ef8595d9';
 
 
