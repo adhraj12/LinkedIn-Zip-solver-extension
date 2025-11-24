@@ -5,7 +5,7 @@ chrome.action.onClicked.addListener((tab) => {
     // Execute the solver logic and the content script in the context of the active tab.
     chrome.scripting.executeScript({
       target: { tabId: tab.id },
-      files: ["solver.js", "content_script.js"],
+      files: ["content_script.js"],
     });
   } else {
     // Provide feedback if the user clicks on a non-LinkedIn page.
