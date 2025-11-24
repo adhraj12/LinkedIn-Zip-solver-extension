@@ -1,5 +1,89 @@
 // This script is injected when you click the extension icon on a LinkedIn page.
 
+// This function will be available in the global scope of the injected script execution context.
+const solve = (board, horizontalWalls, verticalWalls) => {
+    const rows = board.length;
+    if (rows === 0) return { success: false, path: [] };
+    const cols = board[0].length;
+    
+    const dots = {};
+    const totalPathLength = rows * cols;
+    
+    for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+            if (board[r][c] > 0) {
+                dots[board[r][c]] = { r, c };
+            }
+        }
+    }
+    
+    const dotNumbers = Object.keys(dots).map(Number);
+    if (dotNumbers.length === 0) {
+        return { success: totalPathLength <= 1, path: totalPathLength === 1 ? [[1]] : [] };
+    }
+    
+    const maxDot = Math.max(...dotNumbers);
+    const startPos = dots[1];
+
+    if (!startPos) return { success: false, path: [] }; 
+
+    const path = Array.from({ length: rows }, () => Array(cols).fill(0));
+
+    const findPath = (r, c, step, currentDot) => {
+        if (r < 0 || r >= rows || c < 0 || c >= cols || path[r][c] !== 0) {
+            return false;
+        }
+
+        let nextDot = currentDot;
+        const cellValue = board[r][c];
+
+        if (cellValue > 0) {
+            if (cellValue === currentDot + 1) {
+                nextDot++;
+            } else if (cellValue !== currentDot) {
+                return false;
+            }
+        }
+        
+        path[r][c] = step;
+
+        if (cellValue === maxDot && step === totalPathLength) {
+            return true;
+        }
+
+        if (step === totalPathLength) {
+            path[r][c] = 0;
+            return false;
+        }
+
+        // --- Wall-aware direction checking ---
+        // Right
+        if (c < cols - 1 && !verticalWalls[r][c]) {
+            if (findPath(r, c + 1, step + 1, nextDot)) return true;
+        }
+        // Left
+        if (c > 0 && !verticalWalls[r][c - 1]) {
+            if (findPath(r, c - 1, step + 1, nextDot)) return true;
+        }
+        // Down
+        if (r < rows - 1 && !horizontalWalls[r][c]) {
+            if (findPath(r + 1, c, step + 1, nextDot)) return true;
+        }
+        // Up
+        if (r > 0 && !horizontalWalls[r - 1][c]) {
+            if (findPath(r - 1, c, step + 1, nextDot)) return true;
+        }
+
+        // Backtrack
+        path[r][c] = 0;
+        return false;
+    };
+
+    const success = findPath(startPos.r, startPos.c, 1, 1);
+
+    return { success, path };
+};
+
 (async function() {
     console.log("Zip Puzzle Solver Extension: Script injected.");
 
@@ -7,10 +91,6 @@
     const GRID_CONTAINER_SELECTOR = '[data-testid="interactive-grid"]';
     const CELL_SELECTOR = '[data-cell-idx]';
     const CELL_CONTENT_SELECTOR = '[data-cell-content="true"]';
-    // LinkedIn has moved from classes to more stable data-testid attributes for walls.
-    // TODO: The class for horizontal walls needs to be identified and updated.
-    const WALL_DOWN_SELECTOR = '._914a2ded'; 
-    const WALL_RIGHT_SELECTOR = '.ef8595d9';
 
 
     /**
@@ -60,7 +140,6 @@
         }
 
         const style = gridElement.getAttribute('style');
-        // Use a more generic regex to handle obfuscated CSS variable names
         const sizeMatch = style?.match(/--\w+:\s*(\d+)/);
         if (!sizeMatch?.[1]) {
             showFeedback('❌ Could not determine grid size from style attribute.', true);
@@ -78,6 +157,8 @@
         const horizontalWalls = Array.from({ length: size - 1 }, () => Array(size).fill(false));
         const verticalWalls = Array.from({ length: size }, () => Array(size - 1).fill(false));
 
+        // Computed Style-based wall detection.
+        // This is more robust than class names as it detects the visual border rendered by ::after.
         cells.forEach(cell => {
             const idxAttr = cell.getAttribute('data-cell-idx');
             if (idxAttr === null) return;
@@ -91,12 +172,33 @@
                 grid[r][c] = parseInt(content.textContent.trim(), 10) || 0;
             }
 
-            if (cell.querySelector(WALL_DOWN_SELECTOR) && r < size - 1) {
-                horizontalWalls[r][c] = true;
-            }
-            if (cell.querySelector(WALL_RIGHT_SELECTOR) && c < size - 1) {
-                verticalWalls[r][c] = true;
-            }
+            // Deep Child Scan for Wall Detection
+            // Walls are on child elements' ::after pseudo-elements.
+            // We check all children for thick borders on ::after.
+            const descendants = cell.querySelectorAll('*');
+            descendants.forEach(child => {
+                const afterStyle = window.getComputedStyle(child, '::after');
+                const borderRight = parseFloat(afterStyle.borderRightWidth);
+                const borderBottom = parseFloat(afterStyle.borderBottomWidth);
+                const borderLeft = parseFloat(afterStyle.borderLeftWidth);
+                const borderTop = parseFloat(afterStyle.borderTopWidth);
+
+                // Threshold to ignore thin borders (like 0.8px)
+                const WALL_THRESHOLD = 2;
+
+                if (borderRight > WALL_THRESHOLD && c < size - 1) {
+                    verticalWalls[r][c] = true;
+                }
+                if (borderBottom > WALL_THRESHOLD && r < size - 1) {
+                    horizontalWalls[r][c] = true;
+                }
+                if (borderLeft > WALL_THRESHOLD && c > 0) {
+                    verticalWalls[r][c - 1] = true;
+                }
+                if (borderTop > WALL_THRESHOLD && r > 0) {
+                    horizontalWalls[r - 1][c] = true;
+                }
+            });
         });
         
         return { grid, horizontalWalls, verticalWalls, size, gridElement };
@@ -182,7 +284,7 @@
         const result = readGrid();
         if (result) {
             const { grid, horizontalWalls, verticalWalls, size, gridElement } = result;
-            // The `solve` function is globally available because solver.js was injected first.
+            // The `solve` function is now defined in this script.
             const solution = solve(grid, horizontalWalls, verticalWalls);
             
             if (solution.success && solution.path.length > 0) {
