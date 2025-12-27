@@ -5,10 +5,10 @@ const solve = (board, horizontalWalls, verticalWalls) => {
     const rows = board.length;
     if (rows === 0) return { success: false, path: [] };
     const cols = board[0].length;
-    
+
     const dots = {};
     const totalPathLength = rows * cols;
-    
+
     for (let r = 0; r < rows; r++) {
         for (let c = 0; c < cols; c++) {
             if (board[r][c] > 0) {
@@ -16,16 +16,16 @@ const solve = (board, horizontalWalls, verticalWalls) => {
             }
         }
     }
-    
+
     const dotNumbers = Object.keys(dots).map(Number);
     if (dotNumbers.length === 0) {
         return { success: totalPathLength <= 1, path: totalPathLength === 1 ? [[1]] : [] };
     }
-    
+
     const maxDot = Math.max(...dotNumbers);
     const startPos = dots[1];
 
-    if (!startPos) return { success: false, path: [] }; 
+    if (!startPos) return { success: false, path: [] };
 
     const path = Array.from({ length: rows }, () => Array(cols).fill(0));
 
@@ -44,7 +44,7 @@ const solve = (board, horizontalWalls, verticalWalls) => {
                 return false;
             }
         }
-        
+
         path[r][c] = step;
 
         if (cellValue === maxDot && step === totalPathLength) {
@@ -84,7 +84,7 @@ const solve = (board, horizontalWalls, verticalWalls) => {
     return { success, path };
 };
 
-(async function() {
+(async function () {
     console.log("Zip Puzzle Solver Extension: Script injected.");
 
     // ======================== SELECTOR CONFIGURATION ========================
@@ -115,7 +115,7 @@ const solve = (board, horizontalWalls, verticalWalls) => {
             indicator.style.transition = 'opacity 0.3s ease';
             document.body.appendChild(indicator);
         }
-        
+
         indicator.textContent = message;
         indicator.style.backgroundColor = isError ? '#c53030' : '#2f855a';
         indicator.style.opacity = '1';
@@ -124,7 +124,7 @@ const solve = (board, horizontalWalls, verticalWalls) => {
             if (indicator) indicator.style.opacity = '0';
         }, 4000);
         setTimeout(() => {
-             if (indicator) indicator.remove();
+            if (indicator) indicator.remove();
         }, 4300);
     }
 
@@ -152,29 +152,59 @@ const solve = (board, horizontalWalls, verticalWalls) => {
             showFeedback(`❌ Expected ${size * size} cells, but found ${cells.length}.`, true);
             return null;
         }
-        
+
         const grid = Array.from({ length: size }, () => Array(size).fill(0));
         const horizontalWalls = Array.from({ length: size - 1 }, () => Array(size).fill(false));
         const verticalWalls = Array.from({ length: size }, () => Array(size - 1).fill(false));
 
         // Computed Style-based wall detection.
         // This is more robust than class names as it detects the visual border rendered by ::after.
-        cells.forEach(cell => {
-            const idxAttr = cell.getAttribute('data-cell-idx');
-            if (idxAttr === null) return;
-            const idx = parseInt(idxAttr, 10);
-            
-            const r = Math.floor(idx / size);
-            const c = idx % size;
+        // Visual Mapping: Sort cells by screen position to ensure 100% accurate grid mapping
+        // This ignores DOM order and data attributes, relying on what the user actually sees.
+        const cellData = Array.from(cells).map(cell => {
+            const rect = cell.getBoundingClientRect();
+            return {
+                element: cell,
+                x: rect.left + window.scrollX,
+                y: rect.top + window.scrollY,
+                centerX: rect.left + rect.width / 2,
+                centerY: rect.top + rect.height / 2
+            };
+        });
+
+        // Sort by Y (rows), then X (cols)
+        // We use a small tolerance for Y to handle sub-pixel differences
+        const ROW_TOLERANCE = 10;
+        cellData.sort((a, b) => {
+            if (Math.abs(a.y - b.y) > ROW_TOLERANCE) {
+                return a.y - b.y;
+            }
+            return a.x - b.x;
+        });
+
+        // Re-order the cells list to match the visual grid
+        const sortedCells = cellData.map(d => d.element);
+
+        // Populate grid based on the sorted list
+        sortedCells.forEach((cell, i) => {
+            const r = Math.floor(i / size);
+            const c = i % size;
 
             const content = cell.querySelector(CELL_CONTENT_SELECTOR);
             if (content?.textContent) {
                 grid[r][c] = parseInt(content.textContent.trim(), 10) || 0;
             }
 
+            // Fallback: If no number found yet, try reading the cell's text directly.
+            if (grid[r][c] === 0) {
+                const rawText = cell.textContent.trim();
+                const val = parseInt(rawText, 10);
+                if (!isNaN(val) && val > 0) {
+                    grid[r][c] = val;
+                }
+            }
+
             // Deep Child Scan for Wall Detection
-            // Walls are on child elements' ::after pseudo-elements.
-            // We check all children for thick borders on ::after.
             const descendants = cell.querySelectorAll('*');
             descendants.forEach(child => {
                 const afterStyle = window.getComputedStyle(child, '::after');
@@ -183,7 +213,6 @@ const solve = (board, horizontalWalls, verticalWalls) => {
                 const borderLeft = parseFloat(afterStyle.borderLeftWidth);
                 const borderTop = parseFloat(afterStyle.borderTopWidth);
 
-                // Threshold to ignore thin borders (like 0.8px)
                 const WALL_THRESHOLD = 2;
 
                 if (borderRight > WALL_THRESHOLD && c < size - 1) {
@@ -200,21 +229,18 @@ const solve = (board, horizontalWalls, verticalWalls) => {
                 }
             });
         });
-        
-        return { grid, horizontalWalls, verticalWalls, size, gridElement };
+
+        return { grid, horizontalWalls, verticalWalls, size, gridElement, cells: sortedCells };
     }
 
     /**
-     * Draws the solution path on the grid.
+     * Simulates user interaction to solve the puzzle automatically.
      * @param {number[][]} path - The solved path.
      * @param {number} size - The size of the grid.
      * @param {HTMLElement} gridElement - The DOM element of the grid container.
+     * @param {NodeList|Array} cells - The list of cell elements in DOM order.
      */
-    function drawSolutionPath(path, size, gridElement) {
-        const existingSvgId = 'zip-solver-solution-svg';
-        const oldSvg = document.getElementById(existingSvgId);
-        if (oldSvg) oldSvg.remove();
-
+    async function simulateSolution(path, size, gridElement, cells) {
         const pathPoints = [];
         for (let r = 0; r < size; r++) {
             for (let c = 0; c < size; c++) {
@@ -227,68 +253,125 @@ const solve = (board, horizontalWalls, verticalWalls) => {
 
         if (pathPoints.length < 2) return;
 
-        const firstCell = gridElement.querySelector(CELL_SELECTOR);
-        if (!firstCell) return;
-        
-        const cellSize = firstCell.getBoundingClientRect().width;
-        const halfCell = cellSize / 2;
-        const strokeWidth = Math.max(4, Math.min(20, cellSize * 0.3));
+        // Use DOM order to retrieve cells, avoiding unreliable data-cell-idx attributes
+        const getCell = (r, c) => cells[r * size + c];
 
-        const pathData = pathPoints.map(p => {
-            const x = p.c * cellSize + halfCell;
-            const y = p.r * cellSize + halfCell;
-            return `${x},${y}`;
-        }).join(' L ');
-        const svgPathD = `M ${pathData}`;
+        // Helper to create events with coordinates
+        const createEvent = (type, x, y, target) => new PointerEvent(type, {
+            bubbles: true,
+            cancelable: true,
+            view: window,
+            detail: 1,
+            screenX: x, // Approximate
+            screenY: y, // Approximate
+            clientX: x,
+            clientY: y,
+            ctrlKey: false,
+            altKey: false,
+            shiftKey: false,
+            metaKey: false,
+            button: 0,
+            buttons: 1, // Left button pressed
+            pointerId: 1,
+            pointerType: 'mouse',
+            isPrimary: true,
+            pressure: 0.5,
+            relatedTarget: null
+        });
 
-        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-        svg.id = existingSvgId;
-        svg.style.position = 'absolute';
-        svg.style.top = '0';
-        svg.style.left = '0';
-        svg.style.width = '100%';
-        svg.style.height = '100%';
-        svg.style.pointerEvents = 'none';
-        svg.setAttribute('viewBox', `0 0 ${gridElement.offsetWidth} ${gridElement.offsetHeight}`);
+        // Execute moves
+        for (let i = 0; i < pathPoints.length; i++) {
+            const { r, c } = pathPoints[i];
+            const cell = getCell(r, c);
+            if (!cell) continue;
 
-        const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
-        const gradient = document.createElementNS('http://www.w3.org/2000/svg', 'linearGradient');
-        gradient.id = 'zipPathGradientExt';
-        gradient.innerHTML = `
-            <stop offset="0%" style="stop-color:#a855f7" /> 
-            <stop offset="50%" style="stop-color:#ec4899" />
-            <stop offset="100%" style="stop-color:#ef4444" />
-        `;
-        defs.appendChild(gradient);
-        svg.appendChild(defs);
+            // CRITICAL FIX: Recalculate coordinates INSTANTLY before clicking.
+            // Screen layout might shift (e.g. closing dev tools), so cached data is dangerous.
+            const rect = cell.getBoundingClientRect();
+            const x = rect.left + rect.width / 2;
+            const y = rect.top + rect.height / 2;
 
-        const pathElement = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-        pathElement.setAttribute('d', svgPathD);
-        pathElement.setAttribute('stroke', 'url(#zipPathGradientExt)');
-        pathElement.setAttribute('stroke-width', String(strokeWidth));
-        pathElement.setAttribute('fill', 'none');
-        pathElement.setAttribute('stroke-linecap', 'round');
-        pathElement.setAttribute('stroke-linejoin', 'round');
-        
-        svg.appendChild(pathElement);
-        
-        if (getComputedStyle(gridElement).position === 'static') {
-            gridElement.style.position = 'relative';
+            // Robust Target Finding
+            let target = document.elementFromPoint(x, y);
+            if (!target || !cell.contains(target)) {
+                target = cell.querySelector(CELL_CONTENT_SELECTOR) || cell;
+            }
+
+            if (i === 0) {
+                // START
+                target.dispatchEvent(createEvent('pointerover', x, y, target));
+                target.dispatchEvent(createEvent('pointerenter', x, y, target));
+                target.dispatchEvent(createEvent('pointerdown', x, y, target));
+                target.dispatchEvent(createEvent('mousedown', x, y, target));
+            } else {
+                // MOVE: Interpolate to simulate real drag across boundaries
+                // We need the previous coordinates to smooth the path
+                const prevR = pathPoints[i - 1].r;
+                const prevC = pathPoints[i - 1].c;
+                const prevCell = getCell(prevR, prevC);
+
+                if (prevCell) {
+                    const savedRect = prevCell.getBoundingClientRect(); // Recalculate safely
+                    const startX = savedRect.left + savedRect.width / 2;
+                    const startY = savedRect.top + savedRect.height / 2;
+
+                    const steps = 5; // 5 intermediate points
+                    for (let s = 1; s <= steps; s++) {
+                        const t = s / steps;
+                        const curX = startX + (x - startX) * t;
+                        const curY = startY + (y - startY) * t;
+
+                        const curTarget = document.elementFromPoint(curX, curY) || target;
+                        curTarget.dispatchEvent(createEvent('pointermove', curX, curY, curTarget));
+                        curTarget.dispatchEvent(createEvent('mousemove', curX, curY, curTarget));
+
+                        // Ultra-fast delay for smoothness
+                        await new Promise(r => setTimeout(r, 2));
+                    }
+                }
+
+                // Final hit on the center
+                target.dispatchEvent(createEvent('pointerover', x, y, target));
+                target.dispatchEvent(createEvent('pointerenter', x, y, target));
+                target.dispatchEvent(createEvent('pointermove', x, y, target));
+                target.dispatchEvent(createEvent('mousemove', x, y, target));
+            }
+
+            // Keep the speed fast but distinct
+            await new Promise(resolve => setTimeout(resolve, 10));
         }
-        gridElement.appendChild(svg);
+
+        // END: Mouse up on the last cell
+        const last = pathPoints[pathPoints.length - 1];
+        const lastCell = getCell(last.r, last.c);
+        if (lastCell) {
+            // Recalculate for final click too
+            const rect = lastCell.getBoundingClientRect();
+            const x = rect.left + rect.width / 2;
+            const y = rect.top + rect.height / 2;
+
+            let lastTarget = document.elementFromPoint(x, y);
+            if (!lastTarget || !lastCell.contains(lastTarget)) {
+                lastTarget = lastCell.querySelector(CELL_CONTENT_SELECTOR) || lastCell;
+            }
+
+            lastTarget.dispatchEvent(createEvent('pointerup', x, y, lastTarget));
+            lastTarget.dispatchEvent(createEvent('mouseup', x, y, lastTarget));
+            lastTarget.dispatchEvent(createEvent('click', x, y, lastTarget)); // Some games might wait for a click
+        }
     }
-    
+
     try {
         showFeedback('🤖 Solving...');
-        
+
         const result = readGrid();
         if (result) {
-            const { grid, horizontalWalls, verticalWalls, size, gridElement } = result;
+            const { grid, horizontalWalls, verticalWalls, size, gridElement, cells } = result;
             // The `solve` function is now defined in this script.
             const solution = solve(grid, horizontalWalls, verticalWalls);
-            
+
             if (solution.success && solution.path.length > 0) {
-                drawSolutionPath(solution.path, size, gridElement);
+                await simulateSolution(solution.path, size, gridElement, cells);
                 showFeedback('✅ Puzzle Solved!');
             } else {
                 showFeedback('❌ No solution could be found.', true);
